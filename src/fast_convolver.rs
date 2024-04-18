@@ -67,7 +67,7 @@ impl FastConvolver {
         let kernel = &self.impulse_response; // get impluse response
         let signal_len = signal.len();
         let kernel_len = kernel.len();
-        let output_len = signal_len + kernel_len - 1;
+        let output_len = output.len(); // signal_len + kernel_len - 1;
     
         for n in 0..output_len {
             let mut sum = 0.0;
