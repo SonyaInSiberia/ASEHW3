@@ -51,10 +51,9 @@ impl FastConvolver {
                 // Time domain convolution implementation
                 self.tdConv(input, output);
             }
-            ConvolutionMode::FrequencyDomain { .. } => {
+            ConvolutionMode::FrequencyDomain { block_size } => {
                 // Frequency domain convolution implementation
-                todo!("implement")
-                // self.fdConv(input, output);
+                self.fdConv(input, output, block_size);
             }
         }
     }
@@ -83,48 +82,78 @@ impl FastConvolver {
     }
 
     // Freq Domain Convolution
-    fn fdConv(&mut self, signal: &[f32], output: &mut [f32], block_size: usize) {
-        todo!("implement")
-        // let signal_len = signal.len();
-        // let kernel_len = self.impulse_response.len();
-        // let output_len = signal_len + kernel_len - 1;
+    fn fdConv(&mut self, signal: &[f32], output: &mut [f32], block_size: usize) -> Vec<f32> {
+        let mut real_planner = RealFftPlanner::<f32>::new();
+        let r2c = real_planner.plan_fft_forward(block_size);
+        let c2r = real_planner.plan_fft_inverse(block_size);
 
-        // let mut fft = RealToComplex::new(real_signal.len());
-        // let complex_signal = fft.forward(&real_signal);   
+        // make a vector for storing the spectrum
+        let mut signal_fft: Vec<Complex<f32>> = r2c.make_output_vec();
+        let mut kernel_fft: Vec<Complex<f32>> = r2c.make_output_vec();
 
-        // let mut signal_fft = vec![Complex::zero(); block_size];
-        // let mut kernel_fft = vec![Complex::zero(); block_size];
-        // let mut output_fft = vec![Complex::zero(); block_size];
-                
-        // let mut fft_planner = FftPlanner::new();
-        // let fft = fft_planner.plan_fft_forward(block_size);
-    
-        // // Perform FFT on both signals
-        // fft.process_with_scratch(signal, &mut signal_fft);
-        // fft.process_with_scratch(self.impulse_response, &mut kernel_fft);
+        // zero-padding signal
+        let mut padded_signal = if signal.len() < block_size {
+            let num_zeros = block_size - signal.len();
+            let mut temp = signal.to_vec();
+            temp.extend(vec![0.0; num_zeros]);
+            temp
+        } else {
+            signal.to_vec()
+        };
 
-        // // Multiply the transformed input signal and impulse response
-        // for i in 0..block_size {
-        //     output_fft[i] = signal_fft[i] * kernel_fft[i];
-        // }
-    
-        // // Perform inverse FFT
-        // let mut ifft_planner = FftPlanner::new();
-        // let ifft = ifft_planner.plan_fft_inverse(block_size);      
+        // zero-padding IR
+        let mut padded_ir = if self.impulse_response.len() < block_size {
+            let num_zeros = block_size - self.impulse_response.len();
+            let mut temp = self.impulse_response.to_vec();
+            temp.extend(vec![0.0; num_zeros]);
+            temp
+        } else {
+            self.impulse_response.to_vec()
+        };
 
-        // ifft.process(output_fft.as_mut_slice());
+        // fft
+        r2c.process(&mut padded_signal, &mut signal_fft).unwrap();
+        r2c.process(&mut padded_ir, &mut kernel_fft).unwrap();
+
+        // Frequency domain convolution
+        for i in 0..signal_fft.len() {
+            signal_fft[i] *= kernel_fft[i];
+        }
+
+        // IFFT
+        c2r.process(&mut signal_fft, output).unwrap();
+        for i in 0..output.len() {
+            output[i] = output[i] / output.len() as f32;
+        }
+
+        output.to_vec()
+
     }
 
 }
 
-// TODO: feel free to define other types (here or in other modules) for your own use
-
 
 #[cfg(test)]
 mod tests {
-    use rustfft::num_traits::ToPrimitive;
-
     use super::*;
+    use approx::assert_relative_eq;
+
+    #[test]
+    fn test_fd_convolution1() {
+        let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let impulse_response = vec![0.5, 1.0, 0.5];
+        let fft_length = signal.len() + impulse_response.len() - 1;
+        let block_size = fft_length;
+        let mut output = vec![0.0; fft_length];
+    
+        let mut convolver = FastConvolver::new(&impulse_response, ConvolutionMode::FrequencyDomain { block_size });
+        convolver.fdConv(&signal, &mut output, block_size);
+    
+        let expected_output = vec![0.5, 2.0, 4.0, 6.0, 8.0, 7.0, 2.5];
+        for (expected, actual) in expected_output.iter().zip(output.iter()) {
+            assert_relative_eq!(actual, expected, epsilon = 1e-6);
+        }
+    } 
 
     #[test]
     fn complex_signal_reconstruct() {
