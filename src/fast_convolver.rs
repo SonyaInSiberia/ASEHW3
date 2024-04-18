@@ -6,7 +6,7 @@ use rustfft::num_traits::Zero;
 use realfft::RealToComplex;
 use realfft::RealFftPlanner;
 
-struct FastConvolver {
+pub struct FastConvolver {
     // TODO: your fields here
     impulse_response: Vec<f32>,
     mode: ConvolutionMode,
@@ -153,9 +153,15 @@ mod tests {
         input_signal[3] = 1.0;
 
         // Create a FastConvolver instance with the random impulse response
-        let mut td_convolver = FastConvolver::new(&impulse_response, ConvolutionMode::TimeDomain);
+        let mut td_convolver = FastConvolver::new(
+            &impulse_response, 
+            ConvolutionMode::TimeDomain
+        );
         let block_size = ir_len + input_len - 1;
-        let mut fd_convolver = FastConvolver::new(&impulse_response, ConvolutionMode::FrequencyDomain { block_size });
+        let mut fd_convolver = FastConvolver::new(
+            &impulse_response, 
+            ConvolutionMode::FrequencyDomain { block_size }
+        );
 
         // Process the input signal and get the output
         let mut td_output = vec![0.0; block_size];
@@ -198,7 +204,10 @@ mod tests {
         let block_size = fft_length;
         let mut output = vec![0.0; fft_length];
     
-        let mut convolver = FastConvolver::new(&impulse_response, ConvolutionMode::FrequencyDomain { block_size });
+        let mut convolver = FastConvolver::new(
+            &impulse_response, 
+            ConvolutionMode::FrequencyDomain { block_size }
+        );
         convolver.fdConv(&signal, &mut output, block_size);
     
         let expected_output = vec![0.5, 2.0, 4.0, 6.0, 8.0, 7.0, 2.5];
@@ -215,7 +224,10 @@ mod tests {
         let block_size = fft_length;
         let mut output = vec![0.0; fft_length];
     
-        let mut convolver = FastConvolver::new(&impulse_response, ConvolutionMode::FrequencyDomain { block_size });
+        let mut convolver = FastConvolver::new(
+            &impulse_response, 
+            ConvolutionMode::FrequencyDomain { block_size }
+        );
         convolver.fdConv(&signal, &mut output, block_size);
 
         let expected_output = vec![0.1, 0.4, 1.0, 2.0, 3.5, 5.0, 6.5, 8.0, 9.5, 11.0, 11.4, 10.6, 8.5, 5.0];
