@@ -10,7 +10,7 @@ struct FastConvolver {
     // TODO: your fields here
     impulse_response: Vec<f32>,
     mode: ConvolutionMode,
-
+    
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -137,7 +137,59 @@ impl FastConvolver {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
+    use rand::prelude::*;
+    use rand_chacha::ChaCha8Rng;
 
+    #[test]
+    fn test_identity() {
+        // Generate a random impulse response of length 51
+        let mut rng = ChaCha8Rng::seed_from_u64(9418); // set random seed
+        let ir_len = 51;
+        let impulse_response: Vec<f32> = (0..ir_len).map(|_| rng.gen_range(-1.0..1.0)).collect();
+
+        // Generate an input signal with an impulse at sample index 3 (10 samples long)
+        let input_len = 10;
+        let mut input_signal = vec![0.0; input_len];
+        input_signal[3] = 1.0;
+
+        // Create a FastConvolver instance with the random impulse response
+        let mut td_convolver = FastConvolver::new(&impulse_response, ConvolutionMode::TimeDomain);
+        let block_size = ir_len + input_len - 1;
+        let mut fd_convolver = FastConvolver::new(&impulse_response, ConvolutionMode::FrequencyDomain { block_size });
+
+        // Process the input signal and get the output
+        let mut td_output = vec![0.0; block_size];
+        let mut fd_output = vec![0.0; block_size];
+        td_convolver.process(&input_signal, &mut td_output);
+        fd_convolver.process(&input_signal, &mut fd_output);
+
+        // Check the first 10 samples of the output
+        let expected_output = vec![
+            0.0,
+            0.0, 
+            0.0, 
+            -0.5180299, 
+            0.7389345, 
+            -0.57418156, 
+            0.9897876, 
+            -0.6168113, 
+            -0.48569036, 
+            0.23319936, 
+        ];
+
+        for (expected, actual) in expected_output.iter().zip(td_output.iter()) {
+            assert_relative_eq!(actual, expected, epsilon = 1e-6);
+        }
+        for (expected, actual) in expected_output.iter().zip(fd_output.iter()) {
+            assert_relative_eq!(actual, expected, epsilon = 1e-6);
+        }        
+    }    
+
+
+
+    ////////////////////////////////////
+    ////   Some extra tests below   ////
+    ////////////////////////////////////
     #[test]
     fn test_fd_convolution1() {
         let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
@@ -156,30 +208,22 @@ mod tests {
     } 
 
     #[test]
-    fn complex_signal_reconstruct() {
-        let mut signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let length = signal.len();
+    fn test_fd_convolution2() {
+        let signal = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let impulse_response = vec![0.1, 0.2, 0.3, 0.4, 0.5];
+        let fft_length = signal.len() + impulse_response.len() - 1;
+        let block_size = fft_length;
+        let mut output = vec![0.0; fft_length];
     
-        let mut real_planner = RealFftPlanner::<f64>::new();
-        let r2c = real_planner.plan_fft_forward(length);
-        let c2r = real_planner.plan_fft_inverse(length);
+        let mut convolver = FastConvolver::new(&impulse_response, ConvolutionMode::FrequencyDomain { block_size });
+        convolver.fdConv(&signal, &mut output, block_size);
 
-        // make a vector for storing the spectrum
-        let mut spectrum = r2c.make_output_vec();          
-        assert_eq!(spectrum.len(), length/2+1);   
+        let expected_output = vec![0.1, 0.4, 1.0, 2.0, 3.5, 5.0, 6.5, 8.0, 9.5, 11.0, 11.4, 10.6, 8.5, 5.0];
 
-        r2c.process(&mut signal, &mut spectrum).unwrap();
-        
-        // idft
-        let mut outdata = c2r.make_output_vec();
-        c2r.process(&mut spectrum, &mut outdata).unwrap();
-
-        for elem in outdata.iter_mut() {
-            *elem /= length as f64;
-        }
-
-        println!("{:?}", outdata);
-    }
+        for (expected, actual) in expected_output.iter().zip(output.iter()) {
+            assert_relative_eq!(actual, expected, epsilon = 1e-6);
+        }     
+    }     
 
     #[test]
     fn test_td_convolution1() {
@@ -205,5 +249,31 @@ mod tests {
             vec![0.1, 0.4, 1.0, 2.0, 3.5, 5.0, 6.5, 8.0, 9.5, 11.0, 11.4, 10.6, 8.5, 5.0]
         );        
     }     
+
+    #[test]
+    fn complex_signal_reconstruct() {
+        let mut signal = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let length = signal.len();
+    
+        let mut real_planner = RealFftPlanner::<f64>::new();
+        let r2c = real_planner.plan_fft_forward(length);
+        let c2r = real_planner.plan_fft_inverse(length);
+
+        // make a vector for storing the spectrum
+        let mut spectrum = r2c.make_output_vec();          
+        assert_eq!(spectrum.len(), length/2+1);   
+
+        r2c.process(&mut signal, &mut spectrum).unwrap();
+        
+        // idft
+        let mut outdata = c2r.make_output_vec();
+        c2r.process(&mut spectrum, &mut outdata).unwrap();
+
+        for elem in outdata.iter_mut() {
+            *elem /= length as f64;
+        }
+
+        println!("{:?}", outdata);
+    }    
 }
 
