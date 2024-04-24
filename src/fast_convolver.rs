@@ -7,10 +7,9 @@ use realfft::RealToComplex;
 use realfft::RealFftPlanner;
 
 pub struct FastConvolver {
-    // TODO: your fields here
     impulse_response: Vec<f32>,
     mode: ConvolutionMode,
-    
+    state: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,20 +23,20 @@ impl FastConvolver {
         match mode {
             ConvolutionMode::TimeDomain => {
                 let state_size = impulse_response.len() - 1;
-                let input_buffer_size = 0;
                 FastConvolver {
                     impulse_response: impulse_response.to_vec(),
                     mode,
+                    state: vec![0.0; state_size],
                 }
             }
             ConvolutionMode::FrequencyDomain { block_size } => {
                 let state_size = block_size - 1;
-                let input_buffer_size = 0;
                 FastConvolver {
                     impulse_response: impulse_response.to_vec(),
                     mode,
+                    state: vec![0.0; state_size],
                 }
-            }   
+            }
         }
     }
 
@@ -50,25 +49,69 @@ impl FastConvolver {
             ConvolutionMode::TimeDomain => {
                 // Time domain convolution implementation
                 self.tdConv(input, output);
+
+                // Update the state with the input samples
+                self.state.extend_from_slice(input);
+                if self.state.len() > self.impulse_response.len() - 1 {
+                    self.state.drain(0..input.len());
+                }
             }
             ConvolutionMode::FrequencyDomain { block_size } => {
                 // Frequency domain convolution implementation
                 self.fdConv(input, output, block_size);
+
+                // Update the state with the input samples
+                self.state.extend_from_slice(input);
+                if self.state.len() > block_size - 1 {
+                    self.state.drain(0..input.len());
+                }
             }
         }
     }
 
     pub fn flush(&mut self, output: &mut [f32]) {
-        todo!("implement")
+        match self.mode {
+            ConvolutionMode::TimeDomain => {
+                let state_len = self.state.len();
+                let output_len = output.len();
+
+                for n in 0..output_len {
+                    let mut sum = 0.0;
+                    for k in 0..state_len {
+                        if n + k < state_len {
+                            sum += self.state[n + k] * self.impulse_response[k];
+                        }
+                    }
+                    output[n] = sum;
+                }
+
+                // Clear the state after flushing
+                self.state.clear();
+            }
+            ConvolutionMode::FrequencyDomain { block_size } => {
+                let state_len = self.state.len();
+                let output_len = output.len();
+
+                // Pad the state with zeros to match the block size
+                let mut padded_state = self.state.clone();
+                padded_state.extend(vec![0.0; block_size - state_len]);
+
+                // Perform frequency domain convolution
+                self.fdConv(&padded_state, output, block_size);
+
+                // Clear the state after flushing
+                self.state.clear();
+            }
+        }
     }
 
     // Time Domain Convolution
     fn tdConv(&mut self, signal: &[f32], output: &mut [f32]) -> Vec<f32> {
-        let kernel = &self.impulse_response; // get impluse response
+        let kernel = &self.impulse_response;
         let signal_len = signal.len();
         let kernel_len = kernel.len();
-        let output_len = output.len(); // signal_len + kernel_len - 1;
-    
+        let output_len = output.len();
+
         for n in 0..output_len {
             let mut sum = 0.0;
             for k in 0..kernel_len {
